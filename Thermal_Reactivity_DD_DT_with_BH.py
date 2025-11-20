@@ -90,74 +90,71 @@ for reaction, params in reactions.items():
 
 #-----------------------------------------------------------------------------------------
 
-# Thermal Reactivity for DT and DD
-plt.figure(figsize=(10,6))
-for reaction, params in reactions.items():
-    BH_name = params[3]
+# # Thermal Reactivity for DT and DD
+# plt.figure(figsize=(10,6))
+# for reaction, params in reactions.items():
+#     BH_name = params[3]
 
-    plt.plot(TI/1e3, reactivity[reaction], label=f"{reaction} (SPARK)")
+#     plt.plot(TI/1e3, reactivity[reaction], label=f"{reaction} (SPARK)")
 
-    # Bosch–Hale fit
-    T_min, T_max = BH_RF.reactivity_fits[BH_name]["Ti_range_keV"]
-    T_vals = np.linspace(T_min, T_max, 500)
-    sv_vals = [BH_RF.sigma_v(T, BH_RF.reactivity_fits[BH_name]) for T in T_vals]
-    plt.plot(T_vals, np.array(sv_vals)/1e6, linestyle="dashed", label=f"{reaction} (BH Fit)")
+#     # Bosch–Hale fit
+#     T_min, T_max = BH_RF.reactivity_fits[BH_name]["Ti_range_keV"]
+#     T_vals = np.linspace(T_min, T_max, 500)
+#     sv_vals = [BH_RF.sigma_v(T, BH_RF.reactivity_fits[BH_name]) for T in T_vals]
+#     plt.plot(T_vals, np.array(sv_vals)/1e6, linestyle="dashed", label=f"{reaction} (BH Fit)")
 
-    # Bosch–Hale Table VIII values
-    Ti_tab = BH_RF.BH_tableVIII["Ti (keV)"]
-    if reaction == "DT":
-        sv_tab = BH_RF.BH_tableVIII[r"D(t,n)\alpha Reaction Rate ($cm^{-3} s^{-1}$)"]
-    else:
-        sv_tab = BH_RF.BH_tableVIII[r"D(d,n)3He ($cm^{-3} s^{-1}$)"]
+#     # Bosch–Hale Table VIII values
+#     Ti_tab = BH_RF.BH_tableVIII["Ti (keV)"]
+#     if reaction == "DT":
+#         sv_tab = BH_RF.BH_tableVIII[r"D(t,n)\alpha Reaction Rate ($cm^{-3} s^{-1}$)"]
+#     else:
+#         sv_tab = BH_RF.BH_tableVIII[r"D(d,n)3He ($cm^{-3} s^{-1}$)"]
 
-#    plt.scatter(Ti_tab, np.array(sv_tab)*1e-6, marker="o", label=f"{reaction} (BH Table VIII)")
+# #    plt.scatter(Ti_tab, np.array(sv_tab)*1e-6, marker="o", label=f"{reaction} (BH Table VIII)")
 
-plt.yscale("log")
-plt.grid(True, which="both", linestyle="--", alpha=0.6)
-plt.xlim(0, 50)
-plt.xlabel("Ion Temperature T (keV)", fontsize=12)
-plt.ylabel("Fusion Reactivity ⟨σv⟩ (m³/s)", fontsize=12)
-plt.title("Comparison of Thermal Reactivities (DT vs DD)", fontsize=14)
-plt.legend()
-plt.tight_layout()
-plt.show()
+# plt.yscale("log")
+# plt.grid(True, which="both", linestyle="--", alpha=0.6)
+# plt.xlim(0, 50)
+# plt.xlabel("Ion Temperature T (keV)", fontsize=12)
+# plt.ylabel("Fusion Reactivity ⟨σv⟩ (m³/s)", fontsize=12)
+# plt.title("Comparison of Thermal Reactivities (DT vs DD)", fontsize=14)
+# plt.legend()
+# plt.tight_layout()
+# plt.show()
 
+# # Relative Difference: SPARK vs BH Fit
+# plt.figure(figsize=(10,6))
 
-#------------------------------------------------------------------------------------------
-# Relative Difference: SPARK vs BH Fit
-plt.figure(figsize=(10,6))
+# for reaction, params in reactions.items():
+#     BH_name = params[3]
 
-for reaction, params in reactions.items():
-    BH_name = params[3]
+#     # Bosch–Hale fit range + values
+#     T_min, T_max = BH_RF.reactivity_fits[BH_name]["Ti_range_keV"]
+#     T_vals = np.linspace(T_min, T_max, 500)
+#     sv_vals = [BH_RF.sigma_v(T, BH_RF.reactivity_fits[BH_name]) for T in T_vals]
+#     sv_vals = np.array(sv_vals) / 1e6  # Convert to m**3/s
 
-    # Bosch–Hale fit range + values
-    T_min, T_max = BH_RF.reactivity_fits[BH_name]["Ti_range_keV"]
-    T_vals = np.linspace(T_min, T_max, 500)
-    sv_vals = [BH_RF.sigma_v(T, BH_RF.reactivity_fits[BH_name]) for T in T_vals]
-    sv_vals = np.array(sv_vals) / 1e6  # Convert to m**3/s
+#     # Interpolation to match TI grid (keV)
+#     BH_interp = interp1d(T_vals, sv_vals, kind="linear", fill_value="extrapolate")
+#     BH_on_TI = BH_interp(TI/1e3)  # Convert TI from eV to keV
 
-    # Interpolation to match TI grid (keV)
-    BH_interp = interp1d(T_vals, sv_vals, kind="linear", fill_value="extrapolate")
-    BH_on_TI = BH_interp(TI/1e3)  # Convert TI from eV to keV
+#     # Relative difference (%)
+#     rel_diff = ((reactivity[reaction] - BH_on_TI) / BH_on_TI) * 100
 
-    # Relative difference (%)
-    rel_diff = ((reactivity[reaction] - BH_on_TI) / BH_on_TI) * 100
+#     plt.plot(TI/1e3, rel_diff, label=f"{reaction} (SPARK vs BH Fit)")
 
-    plt.plot(TI/1e3, rel_diff, label=f"{reaction} (SPARK vs BH Fit)")
-
-plt.axhline(0, color="black", linestyle="--", linewidth=1)
-plt.xlim(0, 50)
-plt.ylim(-35, 5)
-plt.xlabel("Ion Temperature T (keV)", fontsize=12)
-plt.ylabel("Relative Difference (%)", fontsize=12)
-plt.title("Relative Difference Plot: SPARK vs Bosch–Hale Fit", fontsize=14)
-plt.grid(True, linestyle="--", alpha=0.6)
-plt.legend()
-plt.tight_layout()
-plt.show()
+# plt.axhline(0, color="black", linestyle="--", linewidth=1)
+# plt.xlim(0, 50)
+# plt.ylim(-35, 5)
+# plt.xlabel("Ion Temperature T (keV)", fontsize=12)
+# plt.ylabel("Relative Difference (%)", fontsize=12)
+# plt.title("Relative Difference Plot: SPARK vs Bosch–Hale Fit", fontsize=14)
+# plt.grid(True, linestyle="--", alpha=0.6)
+# plt.legend()
+# plt.tight_layout()
+# plt.show()
 
 #-----------------------------------------------------------------------------------------
-
 # Format the above "Thermal Reactivity for DT and DD" and "Relative Difference: SPARK vs BH Fit" so that both are aligned in the x axis and can be more easily compared.
 # Add the relative difference graph underneath and fit the title so that there are no overlaps visually
 fig, (ax1, ax2) = plt.subplots(
@@ -314,50 +311,51 @@ for reaction, params in reactions.items():
 NEUT_DT_SI = NEUT_DT * 1e6  # cm^-3 -> m^-3
 NEUT_DD_SI = NEUT_DD * 1e6
 
-# Plot comparison --------------------
-plt.figure(figsize=(8,6))
+#-------------------------------------------------------------------------------------
+# # Plot comparison of SPARK vs TRANSP
+# plt.figure(figsize=(8,6))
 
-# Direct integration results
-plt.plot(rho, reaction_rates["DT"], label="SPARK DT", linewidth=2)
-plt.plot(rho, reaction_rates["DD"], label="SPARK DD", linewidth=2)
+# # SPARK results
+# plt.plot(rho, reaction_rates["DT"], label="SPARK DT", linewidth=2)
+# plt.plot(rho, reaction_rates["DD"], label="SPARK DD", linewidth=2)
 
-# TRANSP data (already a reaction rate profile vs rho)
-plt.plot(rho, NEUT_DT_SI, '--', label="TRANSP THNTX_DT", color='C3', linewidth=1.5)
-plt.plot(rho, NEUT_DD_SI, '--', label="TRANSP THNTX_DD", color='C4', linewidth=1.5)
+# # TRANSP data (already a reaction rate profile vs rho)
+# plt.plot(rho, NEUT_DT_SI, '--', label="TRANSP THNTX_DT", color='C3', linewidth=1.5)
+# plt.plot(rho, NEUT_DD_SI, '--', label="TRANSP THNTX_DD", color='C4', linewidth=1.5)
 
-plt.xlabel(r"$\rho_{tor}$")
-plt.ylabel(r"$Reaction Rate (reactions/s/m^{3})$")
-plt.yscale("log")
-plt.title("Comparison of Reaction Rates: SPARK vs TRANSP")
-plt.grid(True, linestyle='--', alpha=0.6)
-plt.legend()
-plt.tight_layout()
-plt.show()
+# plt.xlabel(r"$\rho_{tor}$")
+# plt.ylabel(r"$Reaction Rate (reactions/s/m^{3})$")
+# plt.yscale("log")
+# plt.title("Comparison of Reaction Rates: SPARK vs TRANSP")
+# plt.grid(True, linestyle='--', alpha=0.6)
+# plt.legend()
+# plt.tight_layout()
+# plt.show()
 
 #------------------------------------------------------------------------------------
 
 # Relative Difference Graph for Reaction rate calculation using TRANSP dataset densities of SPARK vs TRANSP
 
-plt.figure(figsize=(8,6))
-EPS = 1e-30
-mask_DT = np.abs(NEUT_DT_SI) > EPS
-mask_DD = np.abs(NEUT_DD_SI) > EPS
+# plt.figure(figsize=(8,6))
+# EPS = 1e-30
+# mask_DT = np.abs(NEUT_DT_SI) > EPS
+# mask_DD = np.abs(NEUT_DD_SI) > EPS
 
-rel_DT = np.zeros_like(NEUT_DT_SI)
-rel_DD = np.zeros_like(NEUT_DD_SI)
-rel_DT[mask_DT] = (reaction_rates["DT"][mask_DT] - NEUT_DT_SI[mask_DT]) / NEUT_DT_SI[mask_DT] * 100.0
-rel_DD[mask_DD] = (reaction_rates["DD"][mask_DD] - NEUT_DD_SI[mask_DD]) / NEUT_DD_SI[mask_DD] * 100.0
+# rel_DT = np.zeros_like(NEUT_DT_SI)
+# rel_DD = np.zeros_like(NEUT_DD_SI)
+# rel_DT[mask_DT] = (reaction_rates["DT"][mask_DT] - NEUT_DT_SI[mask_DT]) / NEUT_DT_SI[mask_DT] * 100.0
+# rel_DD[mask_DD] = (reaction_rates["DD"][mask_DD] - NEUT_DD_SI[mask_DD]) / NEUT_DD_SI[mask_DD] * 100.0
 
-plt.plot(rho, rel_DT, label="DT: SPARK vs TRANSP")
-plt.plot(rho, rel_DD, label="DD: SPARK vs TRANSP")
-plt.axhline(0, linestyle='--', linewidth=1, color='k')
-plt.xlabel(r"$\rho_{tor}$")   # <-- fixed here
-plt.ylabel("Relative Difference (%)")
-plt.title("Relative Difference: Reaction Rate Profiles SPARK vs TRANSP")
-plt.grid(True, linestyle='--', alpha=0.6)
-plt.legend()
-plt.tight_layout()
-plt.show()
+# plt.plot(rho, rel_DT, label="DT: SPARK vs TRANSP")
+# plt.plot(rho, rel_DD, label="DD: SPARK vs TRANSP")
+# plt.axhline(0, linestyle='--', linewidth=1, color='k')
+# plt.xlabel(r"$\rho_{tor}$")   # <-- fixed here
+# plt.ylabel("Relative Difference (%)")
+# plt.title("Relative Difference: Reaction Rate Profiles SPARK vs TRANSP")
+# plt.grid(True, linestyle='--', alpha=0.6)
+# plt.legend()
+# plt.tight_layout()
+# plt.show()
 
 #-----------------------------------------------------------------------------
 # Combined graph for ease of comparison
