@@ -55,6 +55,7 @@ reactions = {
 TI_grid = [5, 10, 100, 1000]
 v_grid = [10, 100, 1000, 5e3, 1e4] 
 
+# Optimal grid resolutions
 #TI_grid = [5, 10, 100, 1000, 10000] # resolution of TI = no of TI points = 5 columns
 #v_grid = [10, 100, 1000, 5e3, 1e4, 5e4, 1e5, 1e6] # resolution of v = no of v points = 8 rows
 
@@ -428,9 +429,9 @@ for reaction, params in reactions.items():
 # Plot comparison --------------------
 plt.figure(figsize=(8,6))
 
-# Direct integration results
-plt.plot(rho, reaction_rates["DT"], label="Direct Integration DT", linewidth=2)
-plt.plot(rho, reaction_rates["DD"], label="Direct Integration DD", linewidth=2)
+# SPARK results
+plt.plot(rho, reaction_rates["DT"], label="SPARK DT", linewidth=2)
+plt.plot(rho, reaction_rates["DD"], label="SPARK DD", linewidth=2)
 
 # TRANSP data (already a reaction rate profile vs rho)
 plt.plot(rho, NEUT_DT, '--', label="TRANSP THNTX_DT", color='C3', linewidth=1.5)
@@ -439,7 +440,7 @@ plt.plot(rho, NEUT_DD, '--', label="TRANSP THNTX_DD", color='C4', linewidth=1.5)
 plt.xlabel(r"$\rho_{tor}$")
 plt.ylabel("Reaction Rate (reactions/s/m^3)")
 plt.yscale("log")
-plt.title("Comparison of Reaction Rates: Direct Integration vs TRANSP")
+plt.title("Comparison of Reaction Rates: SPARK vs TRANSP")
 plt.grid(True, linestyle='--', alpha=0.6)
 plt.legend()
 plt.tight_layout()
