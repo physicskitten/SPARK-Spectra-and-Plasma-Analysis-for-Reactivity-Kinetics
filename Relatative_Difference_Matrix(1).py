@@ -52,20 +52,54 @@ reactions = {
 }
 
 # Temperature and velocity grid
-TI_grid = [5, 10, 100, 1000]
+TI_grid = [5, 10, 100, 1000, 10000]
 v_grid = [10, 100, 1000, 5e3, 1e4] 
 
 # Optimal grid resolutions
 #TI_grid = [5, 10, 100, 1000, 10000] # resolution of TI = no of TI points = 5 columns
 #v_grid = [10, 100, 1000, 5e3, 1e4, 5e4, 1e5, 1e6] # resolution of v = no of v points = 8 rows
 
-# Storage for results
+# Pre-allocate max TI size and safe checkpoint loading
+# Maximum number of TI points we will ever need
+max_TI_points = int(max(TI_grid))
+
+def load_checkpoint():
+    """Loads checkpoint if it exists, otherwise returns empty dicts."""
+    if os.path.exists(CHECKPOINT_FILE):
+        print("Loading previous checkpoint...")
+        with open(CHECKPOINT_FILE, "rb") as f:
+            data = pickle.load(f)
+
+        saved_reactivity = data.get("reactivity", {})
+        saved_rel_diff = data.get("rel_diff_matrix", {})
+
+        # Expand reactivity arrays to max_TI_points if needed
+        for reac, arr in list(saved_reactivity.items()):
+            arr = np.asarray(arr)
+            if arr.size < max_TI_points:
+                new = np.zeros(max_TI_points)
+                new[:arr.size] = arr
+                saved_reactivity[reac] = new
+
+        return saved_reactivity, saved_rel_diff
+
+    else:
+        print("No checkpoint found. Starting fresh.")
+        # initialise full-size arrays
+        return {reaction: np.zeros(max_TI_points) for reaction in reactions}, \
+               {reaction: np.zeros((len(v_grid), len(TI_grid))) for reaction in reactions}
+
+
+# Load checkpoint (or fresh arrays)
 reactivity, rel_diff_matrix = load_checkpoint()
 
-# Ensure matrices exist for all reactions
+# Ensure every reaction has required matrices
 for reaction in reactions:
     if reaction not in rel_diff_matrix:
-        rel_diff_matrix[reaction] = np.zeros((len(v_grid), len(TI_grid))) # 8x5matrix x2 for DD and DT
+        rel_diff_matrix[reaction] = np.zeros((len(v_grid), len(TI_grid)))
+    if reaction not in reactivity:
+        reactivity[reaction] = np.zeros(max_TI_points)
+
 
 # -----------------------------------------------------------------------------------
 # Global total iterations for the global progress bar
@@ -254,13 +288,18 @@ for i_M, M in enumerate(TI_grid):     # i_M = index, M = actual value
 
             # Relative difference (%). Avoid division-by-zero by masking BH_on_TI == 0
             with np.errstate(divide='ignore', invalid='ignore'):
-                rel_diff = ((reactivity[reaction] - BH_on_TI) / BH_on_TI) * 100.0
-                rel_diff = np.where(np.isfinite(rel_diff), rel_diff, np.nan)  # replace inf/nan with nan
+            # Compare ONLY the portion of reactivity actually computed (len(TI))
+                rel_diff = ((reactivity[reaction][:len(TI)] - BH_on_TI) / BH_on_TI) * 100.0
+                rel_diff = np.where(np.isfinite(rel_diff), rel_diff, np.nan)
 
-                mean_rel_diff = np.nanmean(rel_diff)
-                save_checkpoint(reactivity, rel_diff_matrix) # SAVE CHECKPOINT after finishing this matrix entry
-                print(f"Checkpoint saved for {reaction} at TI={M}, v={N}")
+        mean_rel_diff = np.nanmean(rel_diff)
 
+        # Store into matrix so skip-restart works
+        rel_diff_matrix[reaction][i_N, i_M] = mean_rel_diff
+
+        # Save checkpoint after finishing this entry
+        save_checkpoint(reactivity, rel_diff_matrix)
+        print(f"Checkpoint saved for {reaction} at TI={M}, v={N}")
 
 # End of main loops
 total_elapsed = time.time() - global_start_time
