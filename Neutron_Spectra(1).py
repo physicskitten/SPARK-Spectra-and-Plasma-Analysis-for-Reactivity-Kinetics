@@ -49,75 +49,47 @@ reactions = {
     "DD": [3.3443e-27, 3.3443e-27, BH_cs.params_DD, "D(d,n)3He"]
 }
 
-# Velocity grid 
-v = np.linspace(0.0, 5e4, num=1000)         # ideally num = 5000
-dv = np.insert(np.diff(v), -1, np.diff(v)[-1])
+# Velocity grid \
+v = np.linspace(0.0, 5e5, num=500)         # ideally num = 5000
+dv = np.insert(np.diff(v), -1, np.diff(v)[-1]) # same length as v
 
-# Angle sampling (small!)
-cos_theta_CM = np.linspace(-1, 1, num=5)   # test if num = 11 is ideal
+# Angle sampling
+cos_theta_CM = np.linspace(-1, 1, num=11)   # test if num = 11 is ideal
 dcos = np.abs(cos_theta_CM[1] - cos_theta_CM[0])
 
-cos_rel = np.linspace(-1, 1, num=5)         # test if num = 11 is ideal
+cos_rel = np.linspace(-1, 1, num=11)       
 dcos_rel = np.abs(cos_rel[1] - cos_rel[0])
 
-# Energy bins (also reduced for speed)
+# Energy bins
 E_bins = {
-    "DT": np.linspace(14-1, 14+1, num=51),   # 31 bins instead of 51
-    "DD": np.linspace(2.45-0.5, 2.45+0.5, num=51)
+    "DT": np.linspace(14-1, 14+1, num=401),   # 51-201 for testing
+    "DD": np.linspace(2.45-0.5, 2.45+0.5, num=401)
 }
 
 # Temperature list
 TI_keV_list = [5, 10, 15, 20]
 
 
-# # Residual particle masses
-# m_residual = {
-#     "DT": 4.00260325413 * amu,   # 4He
-#     "DD": 3.01602932265 * amu    # 3He
-# }
-
-# # Velocity grid
-# v = np.linspace(0.0, 1e5, num=int(5e3))        # m/s 
-# dv = np.insert(np.diff(v), -1, np.diff(v)[-1])  # same length as v
-
-# # Angle sampling
-# cos_theta_CM = np.linspace(-1, 1, num=11)  
-# dcos = np.abs(cos_theta_CM[1] - cos_theta_CM[0]) 
-# cos_rel = np.linspace(-1, 1, num=11)  
-# dcos_rel = np.abs(cos_rel[1] - cos_rel[0])
-
-# # Energy bins (MeV)
-# E_bins = {
-#     "DT": np.linspace(14-1, 14+1, num=51),
-#     "DD": np.linspace(2.45-0.5, 2.45+0.5, num=51)
-#}
-
 def compute_neutron_spectra_fast(reaction, params, Ti_keV, v, dv,
                                  cos_rel, dcos_rel, cos_theta_CM, dcos):
+    """
+    Memory-efficient computation of neutron energy samples and weights.
 
+    Returns:
+        {"E_n": E_n_MeV_flat, "R_n": weights_flat}
+    where both arrays are 1-D and have the same length: Nv*Nv*Ncos_rel*Ncm
+    """
     print(f"\nComputing reactivity for {reaction} @ {Ti_keV:.1f} keV...")
-    start_time = time.time()
+    t0 = time.time()
 
-    # CHECKPOINT SETUP
-    checkpoint_labels = [
-        "Maxwellians computed",
-        "Relative velocities computed",
-        "Cross sections + kernels computed",
-        "Neutron energies computed",
-        "Packaging results"
-    ]
-    n_steps = len(checkpoint_labels)
-    def checkpoint(i):
-        elapsed = time.time() - start_time
-        print(f"{reaction}: {int((i+1)/n_steps*100)}% — {checkpoint_labels[i]} "
-              f"({elapsed:.2f} s, {elapsed/60:.2f} min)")
-
-    # 1) Maxwellians & probability weights
+    # Unpack masses/params
     m1, m2, fit_params, _ = params
     mu = (m1 * m2) / (m1 + m2)
 
+    # Temperatures (eV)
     Ti_eV = Ti_keV * 1e3
 
+    # Maxwellians (normalised)
     pref1 = np.sqrt(2.0/np.pi) * (m1 / (kB * Ti_eV))**1.5
     pref2 = np.sqrt(2.0/np.pi) * (m2 / (kB * Ti_eV))**1.5
     MD1 = pref1 * v**2 * np.exp(-m1*v**2 / (2*kB*Ti_eV))
@@ -125,77 +97,86 @@ def compute_neutron_spectra_fast(reaction, params, Ti_keV, v, dv,
     MD1 /= np.trapz(MD1, v)
     MD2 /= np.trapz(MD2, v)
 
-    MD_matrix = np.outer(MD1*dv, MD2*dv)   # (Nv,Nv)
+    MD_matrix = np.outer(MD1 * dv, MD2 * dv)   # shape (Nv, Nv)
+    Nv = v.size
 
-    checkpoint(0)
+    # Prepare velocity grids
+    v1 = v[:, None, None]            # (Nv,1,1)
+    v2 = v[None, :, None]            # (1,Nv,1)
+    cos_rel3 = cos_rel[None, None, :]# (1,1,Ncos_rel)
 
-    # 2) Compute relative velocities
-    v1 = v[:, None, None]                 # (Nv,1,1)
-    v2 = v[None, :, None]                 # (1,Nv,1)
-    cos_rel3 = cos_rel[None, None, :]     # (1,1,Nθ_rel)
+    # Relative velocities and COM motion
+    v_rel = np.sqrt(np.maximum(0.0, v1**2 + v2**2 - 2.0*v1*v2*cos_rel3))  # (Nv,Nv,Ncos_rel)
+    v_CM = (m1 * v[:, None] + m2 * v[None, :]) / (m1 + m2)                 # (Nv,Nv)
 
-    v_rel = np.sqrt(np.maximum(0, v1**2 + v2**2 - 2*v1*v2*cos_rel3))
-
-    checkpoint(1)
-
-    # 3) COM motion, cross-section, kernel
-    v_CM = (m1*v[:, None] + m2*v[None, :])/(m1+m2)
-
-    K = 0.5 * mu * v_rel**2
+    # Kinetic energy in COM (J)
+    K = 0.5 * mu * v_rel**2                     # (Nv,Nv,Ncos_rel)
     E_com_keV = K * J_to_keV
+    E_com_keV = np.maximum(E_com_keV, 1e-12)    # avoid E=0 issues in BH function
 
+    # Cross-section (Bosch-Hale) — ensure no NaN/infs
     sigma = BH_cs.sigma_bosch_hale(E_com_keV,
                                    fit_params['A'],
                                    fit_params['B'],
                                    fit_params['BG'])
-    sigma = np.asarray(sigma)
+    sigma = np.asarray(sigma, dtype=float)
+    sigma = np.nan_to_num(sigma, nan=0.0, posinf=0.0, neginf=0.0)
 
+    # kernel and weight_rel (Nv,Nv,Ncos_rel)
     kernel = sigma * v_rel * barn_to_m2
-
     weight_rel = MD_matrix[:, :, None] * kernel * 0.5 * dcos_rel
 
-    checkpoint(2)
-
-    # 4) Neutron energy distribution
+    # Residual mass and Q (J)
     m_residual = {
-    "DT": 4.00260325413 * amu,   # 4He
-    "DD": 3.01602932265 * amu    # 3He
+        "DT": 4.00260325413 * amu,
+        "DD": 3.01602932265 * amu
     }
-    
     mR = m_residual[reaction]
-
     Q_J = Q_values_MeV[reaction] * MeV_to_J
 
-    sqrt_arg = ((2*m_n*mR)/(m_n+mR)) * (Q_J + K)
-    S = np.sqrt(np.maximum(sqrt_arg, 0))
+    # Precompute A and S arrays with shape (Nv,Nv,Ncos_rel)
+    # A = 0.5*m_n*v_CM^2 + (mR/(m_n+mR))*(Q + K)
+    v_CM_sq = v_CM**2                              # (Nv,Nv)
+    A_base = 0.5 * m_n * v_CM_sq[:, :, None]       # (Nv,Nv,1) broadcasts with K
+    A = A_base + (mR / (m_n + mR)) * (Q_J + K)     # (Nv,Nv,Ncos_rel)
 
-    A = 0.5*m_n*(v_CM[:, :, None]**2) + (mR/(m_n+mR))*(Q_J + K)
+    sqrt_arg = ((2.0 * m_n * mR) / (m_n + mR)) * (Q_J + K)
+    S = np.sqrt(np.maximum(sqrt_arg, 0.0))         # (Nv,Nv,Ncos_rel)
 
-    cosCM = cos_theta_CM[None, None, None, :]  # (1,1,1,Nθ_CM)
-
-    v_CM3 = v_CM[:, :, None]        # (Nv, Nv, 1)
-
-    E_n = (A[..., None] + v_CM3[..., None] * cosCM * S[..., None])
-
-    E_n_MeV = E_n / MeV_to_J
-
-    # FIX WEIGHTS DIMENSIONS TO MATCH E_n
+    # Now loop over cos(theta_CM) — keeps memory small
     Ncm = len(cos_theta_CM)
+    E_blocks = []   # collect flattened E samples per CM angle
+    W_blocks = []   # collect flattened weights per CM angle
 
-    weights = weight_rel[..., None] * (0.5 * dcos)
-    weights = np.repeat(weights, Ncm, axis=3)
+    # precompute factor used for theta sampling (same for each cos theta)
+    theta_weight_factor = 0.5 * dcos   # matches your previous implementation
 
+    for cos_cm in cos_theta_CM:
+        # E_n for this CM angle (Nv,Nv,Ncos_rel)
+        # E_n = A + v_CM * cos_cm * S
+        E_n_j = A + (v_CM[:, :, None] * cos_cm) * S    # (Nv,Nv,Ncos_rel)
 
-    checkpoint(3)
-    result = {
-        "E_n": E_n_MeV.ravel(),
-        "R_n": weights.ravel()
-    } 
-    checkpoint(4)
+        # weight for this CM angle (Nv,Nv,Ncos_rel)
+        w_j = weight_rel * theta_weight_factor        # same shape (Nv,Nv,Ncos_rel)
 
-    return result
+        # Append flattened
+        E_blocks.append((E_n_j / MeV_to_J).ravel())   # convert to MeV and flatten
+        W_blocks.append(w_j.ravel())
 
+    # Concatenate along CM angles to make final vectors
+    E_n_MeV_flat = np.concatenate(E_blocks)
+    R_n_flat = np.concatenate(W_blocks)
 
+    # Sanity checks
+    if E_n_MeV_flat.size != R_n_flat.size:
+        raise RuntimeError("E_n and R_n sizes mismatch after concatenation")
+
+    t_elapsed = time.time() - t0
+    print(f"{reaction}: finished in {t_elapsed:.2f} s — samples: {E_n_MeV_flat.size}")
+
+    return {"E_n": E_n_MeV_flat, "R_n": R_n_flat}
+
+#-----------------------------------------------------------------------------------------------------
 # Compute histograms
 
 neutron_spectra = {}
@@ -207,6 +188,7 @@ for reaction, params in reactions.items():
 
         neutron_spectra[(reaction, Ti_keV, "E_n")] = result["E_n"]
         neutron_spectra[(reaction, Ti_keV, "R_n")] = result["R_n"]
+        
 
 for reaction, params in reactions.items():
     for Ti_keV in TI_keV_list:
@@ -226,7 +208,7 @@ for reaction, params in reactions.items():
         print(f"Computed neutron spectrum for {reaction} @ {Ti_keV:.1f} keV")
 
 
-# Plot histograms
+# Plot histograms seperately 
 for reaction in ["DT", "DD"]:
     plt.figure(figsize=(8,5))
     for Ti_keV in TI_keV_list:
@@ -236,9 +218,41 @@ for reaction in ["DT", "DD"]:
                  where="mid", label=f"{Ti_keV} keV")
     plt.xlabel("Neutron Energy (MeV)")
     plt.ylabel("dR/dE (reactions / s / m³ / MeV)")
-    plt.title(f"Neutron spectrum: {reaction}")
- #   plt.yscale("log")
+    plt.title(f"Neutron Spectrum: {reaction}")
+    plt.yscale("log")
     plt.grid(True, which="both", linestyle="--", alpha=0.6)
     plt.legend()
     plt.tight_layout()
     plt.show()
+    
+# Plot histograms together
+fig, axes = plt.subplots(1, 2, figsize=(14,5), sharey=True)
+
+xlims = {
+    "DT": (13.8, 14.25),
+    "DD": (2.35, 2.5),
+}
+
+for ax, reaction in zip(axes, ["DD", "DT"]):
+    for Ti_keV in TI_keV_list:
+        key = (reaction, Ti_keV)
+        data = neutron_spectra[key]
+
+        ax.step(
+            data["E_bin_centers_MeV"],
+            data["spectrum_per_MeV"],
+            where="mid",
+            label=f"{Ti_keV} keV"
+        )
+    ax.set_xlim(xlims[reaction])
+    ax.set_title(f"{reaction} Spectrum")
+    ax.set_xlabel("Neutron Energy (MeV)")
+    ax.set_yscale("log")
+    ax.grid(True, which="both", linestyle="--", alpha=0.6)
+
+axes[0].set_ylabel("dR/dE (reactions / s / m³ / MeV)")
+axes[1].legend(title="Ion Temperature", fontsize=9)
+
+plt.tight_layout()
+plt.show()
+
